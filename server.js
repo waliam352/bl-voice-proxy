@@ -1,4 +1,3 @@
-
 import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
@@ -45,7 +44,8 @@ wss.on("connection", async (twilioWS) => {
 
   // Connect to OpenAI Realtime
   try {
-    openaiWS = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
+    openaiWS = new WebSocket(
+      "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17",
       { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
     );
   } catch (e) {
@@ -58,47 +58,55 @@ wss.on("connection", async (twilioWS) => {
     if (WEBHOOK_URL) {
       postJSON(WEBHOOK_URL, { type: "call_started", at: new Date().toISOString() });
     }
-    // Configure Swedish session and BSR scope
-    const sessionUpdate = {
-      type: "session.update",
-      session: {
-        instructions: `
-Du är BranchLinks svenska röstagent för BSR.
-Scope: bokning/ombokning/avbokning, offert (regnr, bil, kontakt), öppettider/adress, tjänster (trim/uppdatering/garanti).
-Om något är utanför BSR: svara kort "Jag kan bara hjälpa till med BSR-frågor. Vill du boka, få offert eller veta öppettider?"
-Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
-`,
-        language: "sv-SE",
-        modalities: ["audio"],
-        voice: "alloy",
-        input_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 },
-        output_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 }
-      }
-    };
-    openaiWS.send(JSON.stringify(sessionUpdate));
   });
 
   // Relay Twilio -> OpenAI
   twilioWS.on("message", (buf) => {
     try {
       const msg = JSON.parse(buf.toString());
+
       if (msg.event === "start") {
         streamSid = msg.start.streamSid;
+
+        // 🔹 Send session.update here (after Twilio start)
+        const sessionUpdate = {
+          type: "session.update",
+          session: {
+            instructions: `
+Du är BranchLinks svenska röstagent för BSR.
+Scope: bokning/ombokning/avbokning, offert (regnr, bil, kontakt), öppettider/adress, tjänster (trim/uppdatering/garanti).
+Om något är utanför BSR: svara kort "Jag kan bara hjälpa till med BSR-frågor. Vill du boka, få offert eller veta öppettider?"
+Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
+`,
+            language: "sv-SE",
+            modalities: ["audio"],
+            voice: "alloy",
+            input_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 },
+            output_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 }
+          }
+        };
+        openaiWS.send(JSON.stringify(sessionUpdate));
+
         if (WEBHOOK_URL) {
           postJSON(WEBHOOK_URL, { type: "media_stream_start", at: new Date().toISOString(), start: msg.start || {} });
         }
       }
+
       if (msg.event === "media" && open) {
         openaiWS.send(JSON.stringify({
           type: "input_audio_buffer.append",
           audio: msg.media.payload
         }));
       }
+
       if ((msg.event === "mark" || msg.event === "stop") && open) {
         openaiWS.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
         openaiWS.send(JSON.stringify({ type: "response.create" }));
+
         if (msg.event === "stop") {
-          if (WEBHOOK_URL) { postJSON(WEBHOOK_URL, { type: "call_ended", at: new Date().toISOString() }); }
+          if (WEBHOOK_URL) {
+            postJSON(WEBHOOK_URL, { type: "call_ended", at: new Date().toISOString() });
+          }
           cleanup();
         }
       }

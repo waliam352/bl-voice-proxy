@@ -49,12 +49,14 @@ wss.on("connection", async (twilioWS) => {
       { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
     );
   } catch (e) {
+    console.error("Failed to connect OpenAI:", e.message);
     cleanup();
     return;
   }
 
   openaiWS.on("open", () => {
     open = true;
+    console.log("✅ OpenAI Realtime connected");
     if (WEBHOOK_URL) {
       postJSON(WEBHOOK_URL, { type: "call_started", at: new Date().toISOString() });
     }
@@ -67,8 +69,9 @@ wss.on("connection", async (twilioWS) => {
 
       if (msg.event === "start") {
         streamSid = msg.start.streamSid;
+        console.log("☎️ Twilio stream started:", streamSid);
 
-        // 🔹 Skicka session.update med rätt format
+        // Force session config
         const sessionUpdate = {
           type: "session.update",
           session: {
@@ -82,17 +85,18 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
             modalities: ["audio"],
             voice: "alloy",
             input_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 },
-            output_audio_format: { type: "pcm16", sample_rate_hz: 8000 } // 🔹 FIX
+            output_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 }
           }
         };
         openaiWS.send(JSON.stringify(sessionUpdate));
 
-        // 🔹 Autosvar i början
+        // Force first greeting
         openaiWS.send(JSON.stringify({
           type: "response.create",
           response: {
             instructions: "Hej och välkommen till BSR! Jag är en AI-assistent. Vad kan jag hjälpa dig med?",
-            modalities: ["audio"]  // säkerställ ljudsvar
+            modalities: ["audio"],
+            audio: { voice: "alloy", format: "g711_ulaw" } // alltid ljud
           }
         }));
 
@@ -110,7 +114,13 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
 
       if ((msg.event === "mark" || msg.event === "stop") && open) {
         openaiWS.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-        openaiWS.send(JSON.stringify({ type: "response.create" }));
+        openaiWS.send(JSON.stringify({
+          type: "response.create",
+          response: {
+            modalities: ["audio"],
+            audio: { voice: "alloy", format: "g711_ulaw" } // alltid ljud
+          }
+        }));
 
         if (msg.event === "stop") {
           if (WEBHOOK_URL) {
@@ -119,17 +129,17 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
           cleanup();
         }
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error("Error Twilio->OpenAI:", err.message);
+    }
   });
 
   // Relay OpenAI -> Twilio
   openaiWS.on("message", (buf) => {
     try {
       const evt = JSON.parse(buf.toString());
-      if (evt.type === "response.audio.delta") {
-        console.log("🔊 OpenAI audio delta:", evt.delta ? "data received" : "empty");
-      }
       if (evt.type === "response.audio.delta" && evt.delta && streamSid) {
+        console.log("🔊 Sending audio packet to Twilio");
         twilioWS.send(JSON.stringify({
           event: "media",
           streamSid,
@@ -137,7 +147,7 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
         }));
       }
     } catch (err) {
-      console.error("Error parsing OpenAI message:", err.message);
+      console.error("Error OpenAI->Twilio:", err.message);
     }
   });
 
@@ -152,3 +162,4 @@ const port = process.env.PORT || 3000;
 server.listen(port, () => {
   console.log("BranchLink Realtime proxy listening on port", port);
 });
+

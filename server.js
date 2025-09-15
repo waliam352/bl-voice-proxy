@@ -68,7 +68,7 @@ wss.on("connection", async (twilioWS) => {
       if (msg.event === "start") {
         streamSid = msg.start.streamSid;
 
-        // 🔹 Send session.update here (after Twilio start)
+        // 🔹 Skicka session.update direkt efter start
         const sessionUpdate = {
           type: "session.update",
           session: {
@@ -87,11 +87,12 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
         };
         openaiWS.send(JSON.stringify(sessionUpdate));
 
-        // 🔹 Send an immediate first autosvar
+        // 🔹 Skicka autosvar som audio
         openaiWS.send(JSON.stringify({
           type: "response.create",
           response: {
-            instructions: "Hej och välkommen till BSR! Jag är en AI-assistent. Vad kan jag hjälpa dig med?"
+            instructions: "Hej och välkommen till BSR! Jag är en AI-assistent. Vad kan jag hjälpa dig med?",
+            modalities: ["audio"]
           }
         }));
 
@@ -121,7 +122,7 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
     } catch (_) {}
   });
 
-  // Relay OpenAI -> Twilio (with detailed debug)
+  // Relay OpenAI -> Twilio (with debug logs)
   openaiWS.on("message", (buf) => {
     try {
       const evt = JSON.parse(buf.toString());
@@ -133,7 +134,7 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
           console.log("🔊 OpenAI audio delta: EMPTY");
         }
       } else {
-        console.log("📩 OpenAI event:", evt.type, evt);
+        console.log("📩 OpenAI event:", evt.type);
       }
 
       if (evt.type === "response.audio.delta" && evt.delta && streamSid) {

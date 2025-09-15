@@ -82,7 +82,7 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
             modalities: ["audio"],
             voice: "alloy",
             input_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 },
-            output_audio_format: { type: "pcm16", sample_rate_hz: 8000 }
+            output_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 }
           }
         };
         openaiWS.send(JSON.stringify(sessionUpdate));

@@ -82,10 +82,18 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
             modalities: ["audio"],
             voice: "alloy",
             input_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 },
-            output_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 }
+            output_audio_format: { type: "pcm16", sample_rate_hz: 8000 }
           }
         };
         openaiWS.send(JSON.stringify(sessionUpdate));
+
+        // 🔹 Send an immediate first autosvar
+        openaiWS.send(JSON.stringify({
+          type: "response.create",
+          response: {
+            instructions: "Hej och välkommen till BSR! Jag är en AI-assistent. Vad kan jag hjälpa dig med?"
+          }
+        }));
 
         if (WEBHOOK_URL) {
           postJSON(WEBHOOK_URL, { type: "media_stream_start", at: new Date().toISOString(), start: msg.start || {} });
@@ -117,6 +125,9 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
   openaiWS.on("message", (buf) => {
     try {
       const evt = JSON.parse(buf.toString());
+      if (evt.type === "response.audio.delta") {
+        console.log("🔊 OpenAI audio delta:", evt.delta ? "data received" : "empty");
+      }
       if (evt.type === "response.audio.delta" && evt.delta && streamSid) {
         twilioWS.send(JSON.stringify({
           event: "media",
@@ -124,7 +135,9 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
           media: { payload: evt.delta }
         }));
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error("Error parsing OpenAI message:", err.message);
+    }
   });
 
   // Cleanup

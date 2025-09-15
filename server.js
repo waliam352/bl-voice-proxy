@@ -121,13 +121,21 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
     } catch (_) {}
   });
 
-  // Relay OpenAI -> Twilio
+  // Relay OpenAI -> Twilio (with detailed debug)
   openaiWS.on("message", (buf) => {
     try {
       const evt = JSON.parse(buf.toString());
+
       if (evt.type === "response.audio.delta") {
-        console.log("🔊 OpenAI audio delta:", evt.delta ? "data received" : "empty");
+        if (evt.delta) {
+          console.log("🔊 OpenAI audio delta (first 30 chars):", evt.delta.substring(0, 30));
+        } else {
+          console.log("🔊 OpenAI audio delta: EMPTY");
+        }
+      } else {
+        console.log("📩 OpenAI event:", evt.type, evt);
       }
+
       if (evt.type === "response.audio.delta" && evt.delta && streamSid) {
         twilioWS.send(JSON.stringify({
           event: "media",

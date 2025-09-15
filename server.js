@@ -68,7 +68,7 @@ wss.on("connection", async (twilioWS) => {
       if (msg.event === "start") {
         streamSid = msg.start.streamSid;
 
-        // 🔹 Skicka session.update direkt efter start
+        // 🔹 Skicka session.update med rätt format
         const sessionUpdate = {
           type: "session.update",
           session: {
@@ -82,17 +82,17 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
             modalities: ["audio"],
             voice: "alloy",
             input_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 },
-            output_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 }
+            output_audio_format: { type: "pcm16", sample_rate_hz: 8000 } // 🔹 FIX
           }
         };
         openaiWS.send(JSON.stringify(sessionUpdate));
 
-        // 🔹 Skicka autosvar som audio
+        // 🔹 Autosvar i början
         openaiWS.send(JSON.stringify({
           type: "response.create",
           response: {
             instructions: "Hej och välkommen till BSR! Jag är en AI-assistent. Vad kan jag hjälpa dig med?",
-            modalities: ["audio"]
+            modalities: ["audio"]  // säkerställ ljudsvar
           }
         }));
 
@@ -122,21 +122,13 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
     } catch (_) {}
   });
 
-  // Relay OpenAI -> Twilio (with debug logs)
+  // Relay OpenAI -> Twilio
   openaiWS.on("message", (buf) => {
     try {
       const evt = JSON.parse(buf.toString());
-
       if (evt.type === "response.audio.delta") {
-        if (evt.delta) {
-          console.log("🔊 OpenAI audio delta (first 30 chars):", evt.delta.substring(0, 30));
-        } else {
-          console.log("🔊 OpenAI audio delta: EMPTY");
-        }
-      } else {
-        console.log("📩 OpenAI event:", evt.type);
+        console.log("🔊 OpenAI audio delta:", evt.delta ? "data received" : "empty");
       }
-
       if (evt.type === "response.audio.delta" && evt.delta && streamSid) {
         twilioWS.send(JSON.stringify({
           event: "media",

@@ -71,5 +71,42 @@ wss.on("connection", async (twilioWS) => {
     if (WEBHOOK_URL) {
       postJSON(WEBHOOK_URL, {
         type: "call_started",
-        at: new
+        at: new Date().toISOString(),
+      });
+    }
+
+    // 🔹 Autosvar direkt
+    openaiWS.send(
+      JSON.stringify({
+        type: "response.create",
+        response: {
+          instructions: "Hej och välkommen till BSR! Vad kan jag hjälpa dig med idag?",
+        },
+      })
+    );
+  });
+
+  // Relay Twilio -> OpenAI
+  twilioWS.on("message", (buf) => {
+    try {
+      const msg = JSON.parse(buf.toString());
+
+      if (msg.event === "start") {
+        streamSid = msg.start.streamSid;
+
+        // 🔹 Session config skickas direkt när Twilio startar
+        const sessionUpdate = {
+          type: "session.update",
+          session: {
+            instructions: `
+Du är BranchLinks svenska röstagent för BSR.
+Scope: bokning/ombokning/avbokning, offert (regnr, bil, kontakt), öppettider/adress, tjänster (trim/uppdatering/garanti).
+Om något är utanför BSR: svara kort "Jag kan bara hjälpa till med BSR-frågor. Vill du boka, få offert eller veta öppettider?"
+Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
+`,
+            language: "sv-SE",
+            modalities: ["audio"],
+            voice: "alloy",
+            input_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 },
+            output_audio_format: { type: "g711_ulaw", samp_
 

@@ -93,8 +93,8 @@ wss.on("connection", async (twilioWS) => {
 
       if (msg.event === "start") {
         streamSid = msg.start.streamSid;
+        console.log("📞 Twilio stream started:", streamSid);
 
-        // 🔹 Session config skickas direkt när Twilio startar
         const sessionUpdate = {
           type: "session.update",
           session: {
@@ -108,5 +108,101 @@ Var kort (max 2 meningar) och trevlig. Ställ alltid en relevant följdfråga.
             modalities: ["audio"],
             voice: "alloy",
             input_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 },
-            output_audio_format: { type: "g711_ulaw", samp_
+            output_audio_format: { type: "g711_ulaw", sample_rate_hz: 8000 },
+          },
+        };
 
+        if (openaiReady) {
+          openaiWS.send(JSON.stringify(sessionUpdate));
+        } else {
+          buffer.push(sessionUpdate);
+        }
+      }
+
+      if (msg.event === "media") {
+        console.log("🎤 Twilio audio packet received");
+        const audioEvent = {
+          type: "input_audio_buffer.append",
+          audio: msg.media.payload,
+        };
+        if (openaiReady) {
+          openaiWS.send(JSON.stringify(audioEvent));
+        } else {
+          buffer.push(audioEvent);
+        }
+      }
+
+      if (msg.event === "mark" || msg.event === "stop") {
+        console.log("✅ Twilio sent mark/stop");
+        const commitEvent = { type: "input_audio_buffer.commit" };
+        const responseEvent = { type: "response.create" };
+
+        if (openaiReady) {
+          openaiWS.send(JSON.stringify(commitEvent));
+          openaiWS.send(JSON.stringify(responseEvent));
+        } else {
+          buffer.push(commitEvent, responseEvent);
+        }
+
+        if (msg.event === "stop") {
+          if (WEBHOOK_URL) {
+            postJSON(WEBHOOK_URL, {
+              type: "call_ended",
+              at: new Date().toISOString(),
+            });
+          }
+          cleanup();
+        }
+      }
+    } catch (err) {
+      console.error("❌ Error handling Twilio message:", err.message);
+    }
+  });
+
+  // Relay OpenAI -> Twilio
+  openaiWS.on("message", (buf) => {
+    try {
+      const evt = JSON.parse(buf.toString());
+
+      if (evt.type === "response.audio.delta") {
+        console.log("🔊 OpenAI audio delta received");
+      }
+
+      if (evt.type === "response.audio.delta" && evt.delta && streamSid) {
+        console.log("➡️ Sending audio back to Twilio");
+        twilioWS.send(
+          JSON.stringify({
+            event: "media",
+            streamSid,
+            media: { payload: evt.delta },
+          })
+        );
+      }
+    } catch (err) {
+      console.error("❌ Error parsing OpenAI message:", err.message);
+    }
+  });
+
+  // Cleanup
+  twilioWS.on("close", () => {
+    console.log("❌ Twilio WebSocket closed");
+    cleanup();
+  });
+  twilioWS.on("error", (err) => {
+    console.error("❌ Twilio WebSocket error:", err.message);
+    cleanup();
+  });
+  openaiWS.on("close", () => {
+    console.log("❌ OpenAI WebSocket closed");
+    cleanup();
+  });
+  openaiWS.on("error", (err) => {
+    console.error("❌ OpenAI WebSocket error:", err.message);
+    cleanup();
+  });
+});
+
+const port = process.env.PORT || 3000;
+server.listen(port, () => {
+  console.log("BranchLink Realtime proxy listening on port", port);
+});
